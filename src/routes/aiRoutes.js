@@ -3,7 +3,7 @@ import { chatWithAI } from '../controllers/aiController.js';
 
 const router = express.Router();
 
-// POST /api/ai/chat
+// When the frontend sends a POST request to /api/ai/chat, use the controller
 router.post('/chat', chatWithAI);
 
 export default router;

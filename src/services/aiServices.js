@@ -1,49 +1,24 @@
-import OpenAI from 'openai';
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { createRouterFromFile } from 'free-llm-router';
 import Property from '../models/Property.js';
 
-// Initialize both AI clients
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const geminiModel = genAI.getGenerativeModel({ model: "gemini-3.8-flash" });
-// ---------------------------------------------------------
-// HELPER: The Dual-AI Fallback Logic
-// ---------------------------------------------------------
-async function askAI(prompt) {
-  // 1. Try OpenAI
-  try {
-    console.log("🤖 Trying OpenAI...");
-    const response = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      messages: [{ role: "user", content: prompt }],
-    });
-    console.log("✅ OpenAI Success!");
-    return response.choices[0].message.content;
-  } catch (openaiError) {
-    console.warn(`⚠️ OpenAI failed: ${openaiError.message}. Falling back to Gemini...`);
-  }
+// Load your multi-model router configuration
+const router = await createRouterFromFile('./router.config.json');
 
-  // 2. Fallback to Gemini
-  try {
-    console.log("🤖 Trying Google Gemini...");
-    const result = await geminiModel.generateContent(prompt);
-    console.log("✅ Gemini Success!");
-    return result.response.text();
-  } catch (geminiError) {
-    console.error(`❌ Both AIs failed. Gemini error: ${geminiError.message}`);
-    throw new Error("Our AI agents are currently offline. Please try again later.");
-  }
-}
-
-// ---------------------------------------------------------
-// MAIN FUNCTION: Search DB and Answer User
-// ---------------------------------------------------------
 export const searchAndAnswer = async (userQuery) => {
   try {
-    // STEP 1: Ask AI to write a MongoDB query
+    // ---------------------------------------------------------
+    // STEP 1: Ask the AI to translate the user's text into a MongoDB query
+    // ---------------------------------------------------------
     const queryPrompt = `
       You are a MongoDB query generator for a real estate app.
-      The Property schema has fields: title, description, price (Number), locationName (String), bedrooms (Number), bathrooms (Number).
+      The Property schema has these exact fields: 
+      - title (String)
+      - description (String)
+      - price (Number)
+      - locationName (String)
+      - bedrooms (Number)
+      - bathrooms (Number)
+      
       User's request: "${userQuery}"
       
       Generate a valid JSON MongoDB query to find matching houses. 
@@ -51,35 +26,44 @@ export const searchAndAnswer = async (userQuery) => {
       - If they say "under 500k", use {"price": {"$lte": 500000}}
       - If they say "2 or 4 bedrooms", use {"bedrooms": {"$in": [2, 4]}}
       - If they say "near campus" or "Archie", use {"locationName": {"$regex": "campus|archie", "$options": "i"}}
-      - Return ONLY the raw JSON object. Do NOT wrap it in markdown or backticks.
+      - Always return ONLY the raw JSON object. Do NOT wrap it in markdown or backticks (like \`\`\`json).
     `;
 
-    // Use the Dual-AI helper
-    let queryText = await askAI(queryPrompt);
+    console.log(`🤖 [Router] Asking AI to generate DB query for: "${userQuery}"`);
     
-    // Clean up in case Gemini adds markdown backticks
-    queryText = queryText.replace(/```json/g, '').replace(/```/g, '').trim();
+    const queryResponse = await router.chat({
+      messages: [{ role: 'user', content: queryPrompt }]
+    });
+
+    // Clean up the response just in case the AI added markdown formatting
+    let cleanQueryText = queryResponse.content.replace(/```json/g, '').replace(/```/g, '').trim();
     
-    const mongoQuery = JSON.parse(queryText);
+    // Parse the text into an actual JavaScript object
+    const mongoQuery = JSON.parse(cleanQueryText);
     console.log("🔍 Generated MongoDB Query:", mongoQuery);
 
-    // STEP 2: Search MongoDB using the AI's query
+    // ---------------------------------------------------------
+    // STEP 2: Search MongoDB using the AI-generated query
+    // ---------------------------------------------------------
     const houses = await Property.find(mongoQuery).limit(3);
     console.log(`🏠 Found ${houses.length} houses in database.`);
 
-    // Format data to include images
+    // Format the data so the frontend can show images and details
     const housesData = houses.map(h => ({
       id: h._id,
       title: h.title,
       price: h.price,
       location: h.locationName,
       bedrooms: h.bedrooms,
-      imageUrl: h.imageUrl, // Cloudinary image
+      bathrooms: h.bathrooms,
+      imageUrl: h.imageUrl, // Cloudinary image URL
     }));
 
-    // STEP 3: Ask AI to write the final friendly reply
+    // ---------------------------------------------------------
+    // STEP 3: Ask the AI to write the final friendly reply
+    // ---------------------------------------------------------
     const answerPrompt = `
-      You are a helpful real estate agent for Johnny Houses.
+      You are a helpful real estate agent for Johnny Houses in Osun State.
       User asked: "${userQuery}"
       
       The database search returned these houses:
@@ -91,17 +75,24 @@ export const searchAndAnswer = async (userQuery) => {
       - If the list is empty, apologize and tell them we have no matches right now.
     `;
 
-    // Use the Dual-AI helper again
-    const finalReply = await askAI(answerPrompt);
+    console.log(`🤖 [Router] Asking AI to write final reply...`);
+    
+    const answerResponse = await router.chat({
+      messages: [{ role: 'user', content: answerPrompt }]
+    });
 
-    // Return BOTH the text and the property data to the frontend
+    console.log(`✅ Final reply generated by model: ${answerResponse.model}`);
+
+    // ---------------------------------------------------------
+    // STEP 4: Send everything back to the frontend
+    // ---------------------------------------------------------
     return {
-      reply: finalReply,
-      properties: housesData, 
+      reply: answerResponse.content,
+      properties: housesData, // Contains the images!
     };
 
   } catch (error) {
-    console.error("❌ AI Search Error:", error);
-    throw new Error(error.message);
+    console.error("❌ AI Service Error:", error.message);
+    throw new Error("Our AI agents are currently offline. Please try again later.");
   }
 };

@@ -24,9 +24,9 @@ const CONFIG = {
   maxResults: 5,
   historyTurns: 6,            // how many back-and-forth turns the AI remembers
   sessionTtlMs: 30 * 60_000,  // forget a chat after 30 min of silence
-  llmTimeoutMs: 8_000,        // each attempt: max 8 seconds
+  llmTimeoutMs: 15_000,        // each attempt: max 8 seconds
   llmRetries: 1,              // each retry lets free-llm-router pick another model
-  replyBudgetMs: 12_000,      // the whole reply step: max 12 seconds in total
+  replyBudgetMs: 25_000,      // the whole reply step: max 12 seconds in total
   analyzeBudgetMs: 6_000,     // the understanding step: max 6 seconds in total
   maxMessageLength: 500,
 };

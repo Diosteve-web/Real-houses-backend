@@ -22,12 +22,12 @@ const router = await createRouterFromFile(
 // ───────────────────────── CONFIG ─────────────────────────
 const CONFIG = {
   maxResults: 5,
-  historyTurns: 6,            // how many back-and-forth turns the AI remembers
-  sessionTtlMs: 30 * 60_000,  // forget a chat after 30 min of silence
-  llmTimeoutMs: 15_000,        // each attempt: max 8 seconds
-  llmRetries: 1,              // each retry lets free-llm-router pick another model
-  replyBudgetMs: 25_000,      // the whole reply step: max 12 seconds in total
-  analyzeBudgetMs: 6_000,     // the understanding step: max 6 seconds in total
+  historyTurns: 6,            
+  sessionTtlMs: 30 * 60_000,  
+  llmTimeoutMs: 8_000,        // ⬅️ CHANGE TO 8000 (8 seconds)
+  llmRetries: 0,              // ⬅️ CHANGE TO 0
+  replyBudgetMs: 12_000,      // ⬅️ CHANGE TO 12000
+  analyzeBudgetMs: 6_000,     
   maxMessageLength: 500,
 };
 
@@ -82,16 +82,43 @@ function withTimeout(promise, ms) {
 // Calls the router with retries. Returns { text, model } or null if every attempt failed.
 // budgetMs = total time allowed for ALL attempts. When it runs out we return null so the
 // caller can use the Node.js fallback instead of making the user wait.
+// async function callLLM(messages, { retries = CONFIG.llmRetries, timeoutMs = CONFIG.llmTimeoutMs, budgetMs = Infinity } = {}) {
+//   const deadline = Date.now() + budgetMs;
+//   for (let attempt = 0; attempt <= retries; attempt++) {
+//     const remaining = deadline - Date.now();
+//     if (remaining <= 500) break; // out of time, so go to fallback
+//     try {
+//       const res = await withTimeout(router.chat({ messages }), Math.min(timeoutMs, remaining));
+//       const text = res?.content?.trim();
+//       if (text) return { text, model: res.model };
+//       console.warn(`⚠️ LLM attempt ${attempt + 1}: empty response (${res?.model ?? 'unknown model'})`);
+//     } catch (err) {
+//       console.warn(`⚠️ LLM attempt ${attempt + 1} failed: ${err.message}`);
+//     }
+//   }
+//   return null;
+// }
+
 async function callLLM(messages, { retries = CONFIG.llmRetries, timeoutMs = CONFIG.llmTimeoutMs, budgetMs = Infinity } = {}) {
   const deadline = Date.now() + budgetMs;
+  
+  // Use chatRace if available (fires all models at once), otherwise fallback to sequential
+  const raceFn = typeof router.chatRace === 'function'
+    ? () => router.chatRace({ messages })
+    : () => router.chat({ messages });
+
   for (let attempt = 0; attempt <= retries; attempt++) {
     const remaining = deadline - Date.now();
-    if (remaining <= 500) break; // out of time, so go to fallback
+    if (remaining <= 500) break;
+
     try {
-      const res = await withTimeout(router.chat({ messages }), Math.min(timeoutMs, remaining));
+      const res = await withTimeout(raceFn(), Math.min(timeoutMs, remaining));
       const text = res?.content?.trim();
-      if (text) return { text, model: res.model };
-      console.warn(`⚠️ LLM attempt ${attempt + 1}: empty response (${res?.model ?? 'unknown model'})`);
+      if (text) {
+        console.log(`✅ LLM responded via ${res.model}`);
+        return { text, model: res.model };
+      }
+      console.warn(`⚠️ LLM attempt ${attempt + 1}: empty response (${res?.model ?? 'unknown'})`);
     } catch (err) {
       console.warn(`⚠️ LLM attempt ${attempt + 1} failed: ${err.message}`);
     }

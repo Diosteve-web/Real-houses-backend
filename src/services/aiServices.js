@@ -2,55 +2,64 @@ import { createRouterFromFile } from 'free-llm-router';
 import Property from '../models/Property.js';
 import { fileURLToPath } from 'node:url';
 
-// This correctly resolves the path to the root folder, fixing the ENOENT error
 const routerConfigPath = fileURLToPath(new URL('../../router.config.json', import.meta.url));
 const router = await createRouterFromFile(routerConfigPath);
 
 export const searchAndAnswer = async (userQuery) => {
   try {
     // ---------------------------------------------------------
-    // STEP 1: Ask the AI to translate the user's text into a MongoDB query
+    // STEP 1: Generate the MongoDB query (Advanced Few-Shot Prompting)
     // ---------------------------------------------------------
     const queryPrompt = `
-      You are a MongoDB query generator for a real estate app.
-      The Property schema has these exact fields: 
-      - title (String)
-      - description (String)
-      - price (Number)
-      - locationName (String)
-      - bedrooms (Number)
-      - bathrooms (Number)
+      You are an expert MongoDB query generator for a real estate app.
+      The Property schema has fields: title (String), description (String), price (Number), locationName (String), bedrooms (Number), bathrooms (Number), _id (ObjectId).
       
+      Convert the following user request into a valid JSON object for Mongoose Property.find().
       User's request: "${userQuery}"
-      
-      Generate a valid JSON MongoDB query to find matching houses. 
-      Rules:
-      - If they say "under 500k", use {"price": {"$lte": 500000}}
-      - If they say "2 or 4 bedrooms", use {"bedrooms": {"$in": [2, 4]}}
-      - If they say "near campus" or "Archie", use {"locationName": {"$regex": "campus|archie", "$options": "i"}}
-      - Always return ONLY the raw JSON object. Do NOT wrap it in markdown or backticks (like \`\`\`json).
+
+      Here are examples of how to translate requests:
+      - User: "Show me all houses" -> Output: {}
+      - User: "Houses under 500k" -> Output: {"price": {"$lte": 500000}}
+      - User: "2 or 3 bedrooms near campus" -> Output: {"bedrooms": {"$in": [2, 3]}, "locationName": {"$regex": "campus", "$options": "i"}}
+      - User: "Find the house with ID 65f1b2" -> Output: {"_id": "65f1b2"}
+      - User: "Houses on Archie street under 500k with 2 bathrooms" -> Output: {"price": {"$lte": 500000}, "bathrooms": 2, "locationName": {"$regex": "archie", "$options": "i"}}
+
+      CRITICAL RULES:
+      1. Return ONLY the raw JSON object. 
+      2. DO NOT wrap it in markdown, backticks, or explanations.
+      3. DO NOT use wrappers like { "collection": "houses", "query": {} }. If they want all, just return {}.
+      4. If you cannot understand the query, return {} (empty object).
     `;
 
-    console.log(`🤖 [Router] Asking AI to generate DB query for: "${userQuery}"`);
+    console.log(`🤖 [Router] Generating DB query for: "${userQuery}"`);
     
     const queryResponse = await router.chat({
       messages: [{ role: 'user', content: queryPrompt }]
     });
 
-    // Clean up the response just in case the AI added markdown formatting
+    // Clean up markdown and parse JSON safely
     let cleanQueryText = queryResponse.content.replace(/```json/g, '').replace(/```/g, '').trim();
     
-    // Parse the text into an actual JavaScript object
-    const mongoQuery = JSON.parse(cleanQueryText);
+    let mongoQuery;
+    try {
+      mongoQuery = JSON.parse(cleanQueryText);
+      // Fix for small models hallucinating wrappers
+      if (mongoQuery.query && typeof mongoQuery.query === 'object') {
+        mongoQuery = mongoQuery.query; 
+      }
+    } catch (e) {
+      console.log("⚠️ AI generated invalid JSON. Defaulting to fetching all houses.");
+      mongoQuery = {}; 
+    }
+    
     console.log("🔍 Generated MongoDB Query:", mongoQuery);
 
     // ---------------------------------------------------------
-    // STEP 2: Search MongoDB using the AI-generated query
+    // STEP 2: Search MongoDB
     // ---------------------------------------------------------
-    const houses = await Property.find(mongoQuery).limit(3);
+    const houses = await Property.find(mongoQuery).limit(5);
     console.log(`🏠 Found ${houses.length} houses in database.`);
 
-    // Format the data so the frontend can show images and details
     const housesData = houses.map(h => ({
       id: h._id,
       title: h.title,
@@ -58,39 +67,52 @@ export const searchAndAnswer = async (userQuery) => {
       location: h.locationName,
       bedrooms: h.bedrooms,
       bathrooms: h.bathrooms,
-      imageUrl: h.imageUrl, // Cloudinary image URL
+      imageUrl: h.imageUrl, 
     }));
 
     // ---------------------------------------------------------
-    // STEP 3: Ask the AI to write the final friendly reply
+    // STEP 3: Generate the Final Reply
     // ---------------------------------------------------------
     const answerPrompt = `
-      You are a helpful real estate agent for Johnny Houses in Osun State.
-      User asked: "${userQuery}"
+      You are a friendly, helpful real estate agent for Johnny Houses in Osun State.
+      The user asked: "${userQuery}"
       
-      The database search returned these houses:
+      Here is the exact data from the database for matching houses:
       ${JSON.stringify(housesData, null, 2)}
       
       Instructions:
-      - If houses are found, write a friendly reply highlighting the price, bedrooms, and location.
-      - Tell them to tap the images below to see more details.
-      - If the list is empty, apologize and tell them we have no matches right now.
+      - Write a friendly, conversational reply to the user.
+      - If houses are found, mention the prices, locations, and bedrooms.
+      - If the user asked a specific question (like "what is the price"), answer it directly using the data.
+      - If the data array is empty [], apologize and tell them you couldn't find any matching houses right now.
+      - Always remind them to tap the images below to see more details.
     `;
 
-    console.log(`🤖 [Router] Asking AI to write final reply...`);
+    console.log(`🤖 [Router] Writing final reply...`);
     
     const answerResponse = await router.chat({
       messages: [{ role: 'user', content: answerPrompt }]
     });
 
-    console.log(`✅ Final reply generated by model: ${answerResponse.model}`);
+    console.log(`✅ Reply generated by model: ${answerResponse.model}`);
+    
+    // 👈 NEW: This prints the actual text in your terminal!
+    console.log(`📝 AI Response Text:\n"${answerResponse.content}"\n`); 
 
-    // ---------------------------------------------------------
-    // STEP 4: Send everything back to the frontend
-    // ---------------------------------------------------------
+    // Fallback text if the AI returns nothing
+    let finalReply = answerResponse.content;
+    if (!finalReply || finalReply.trim() === "") {
+      if (housesData.length > 0) {
+        finalReply = `I found ${housesData.length} matching house(s). The first one is ${housesData[0].title} in ${housesData[0].location} for ₦${housesData[0].price.toLocaleString()}. Tap the images below to see more!`;
+      } else {
+        finalReply = `I'm sorry, I couldn't find any houses matching your request right now.`;
+      }
+      console.log(`⚠️ AI returned empty text. Using Node.js Fallback: "${finalReply}"`);
+    }
+
     return {
-      reply: answerResponse.content,
-      properties: housesData, // Contains the images!
+      reply: finalReply,
+      properties: housesData, 
     };
 
   } catch (error) {

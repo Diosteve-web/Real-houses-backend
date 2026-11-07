@@ -5,40 +5,28 @@
       "type": "openai-compatible",
       "baseUrl": "https://api.openai.com/v1",
       "apiKey": "env/OPENAI_API_KEY",
-      "models": [
-        "gpt-4o-mini",
-        "gpt-3.5-turbo"
-      ]
+      "models": ["gpt-4o-mini", "gpt-3.5-turbo"]
     },
     {
       "name": "aionlabs",
       "type": "openai-compatible",
       "baseUrl": "https://api.aionlabs.ai/v1",
       "apiKey": "env/AION_LABS_API_KEY",
-      "models": [
-        "aion-labs/aion-3.0",
-        "aion-labs/aion-3.0-mini"
-      ]
+      "models": ["aion-labs/aion-3.0", "aion-labs/aion-3.0-mini"]
     },
     {
       "name": "cohere",
       "type": "openai-compatible",
       "baseUrl": "https://api.cohere.ai/compatibility/v1",
       "apiKey": "env/COHERE_API_KEY",
-      "models": [
-        "command-r-plus",
-        "command-r"
-      ]
+      "models": ["command-r-plus", "command-r"]
     },
     {
       "name": "gemini",
       "type": "openai-compatible",
       "baseUrl": "https://generativelanguage.googleapis.com/v1beta/openai/",
       "apiKey": "env/GEMINI_API_KEY",
-      "models": [
-        "gemini-3.8-flash",
-        "gemini-2.5-flash"
-      ]
+      "models": ["gemini-3.8-flash", "gemini-2.5-flash"]
     },
     {
       "name": "openrouter",
@@ -46,8 +34,10 @@
       "baseUrl": "https://openrouter.ai/api/v1",
       "apiKey": "env/OPENROUTER_API_KEY",
       "models": [
-        "google/gemma-4-31b-it:free",
-        "nvidia/nemotron-3.5-super-vl:free"
+        "google/gemma-4-31b-it:free", 
+        "nvidia/nemotron-3.5-super-vl:free",
+        "cohere/north-mini-code:free",
+        "liquid/lfm-3-1.7b:free"
       ]
     }
   ]

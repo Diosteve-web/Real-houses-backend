@@ -1,0 +1,59 @@
+{
+  "providers": [
+    {
+      "name": "openai",
+      "type": "openai",
+      "apiKey": "env/OPENAI_API_KEY",
+      "models": [
+        "gpt-4o-mini",
+        "gpt-3.5-turbo"
+      ]
+    },
+    {
+      "name": "aionlabs",
+      "type": "openai-compatible",
+      "baseUrl": "https://api.aionlabs.ai/v1",
+      "apiKey": "env/AION_LABS_API_KEY",
+      "models": [
+        "aion-labs/aion-3.0",
+        "aion-labs/aion-3.0-mini",
+        "aion-labs/aion-2.0"
+      ]
+    },
+    {
+      "name": "cohere",
+      "type": "openai-compatible",
+      "baseUrl": "https://api.cohere.ai/compatibility/v1",
+      "apiKey": "env/COHERE_API_KEY",
+      "models": [
+        "command-r-plus",
+        "command-r",
+        "command-a"
+      ]
+    },
+    {
+      "name": "gemini",
+      "type": "openai-compatible",
+      "baseUrl": "https://generativelanguage.googleapis.com/v1beta/openai/",
+      "apiKey": "env/GEMINI_API_KEY",
+      "models": [
+        "gemini-3.8-flash",
+        "gemini-2.5-flash",
+        "gemini-3.5-flash-lite"
+      ]
+    },
+    {
+      "name": "openrouter",
+      "type": "openai-compatible",
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "apiKey": "env/OPENROUTER_API_KEY",
+      "models": [
+        "cohere/north-mini-code:free",
+        "google/gemma-4-31b-it:free",
+        "nvidia/nemotron-3-ultra-550b-a55b:free",
+        "nvidia/nemotron-3.5-super-vl:free",
+        "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free"
+      ]
+    }
+  ]
+}

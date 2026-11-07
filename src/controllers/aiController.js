@@ -1,4 +1,4 @@
-import { searchAndAnswer } from '../services/aiServicse.js';
+import { searchAndAnswer } from '../services/aiServices.js';
 
 export const chatWithAI = async (req, res) => {
   try {

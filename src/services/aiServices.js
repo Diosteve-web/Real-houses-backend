@@ -1,8 +1,10 @@
 import { createRouterFromFile } from 'free-llm-router';
 import Property from '../models/Property.js';
+import { fileURLToPath } from 'node:url';
 
-// Load your multi-model router configuration
-const router = await createRouterFromFile('./router.config.json');
+// This correctly resolves the path to the root folder, fixing the ENOENT error
+const routerConfigPath = fileURLToPath(new URL('../../router.config.json', import.meta.url));
+const router = await createRouterFromFile(routerConfigPath);
 
 export const searchAndAnswer = async (userQuery) => {
   try {

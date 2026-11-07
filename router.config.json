@@ -2,7 +2,8 @@
   "providers": [
     {
       "name": "openai",
-      "type": "openai",
+      "type": "openai-compatible",
+      "baseUrl": "https://api.openai.com/v1",
       "apiKey": "env/OPENAI_API_KEY",
       "models": [
         "gpt-4o-mini",

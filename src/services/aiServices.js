@@ -24,8 +24,10 @@ const CONFIG = {
   maxResults: 5,
   historyTurns: 6,            // how many back-and-forth turns the AI remembers
   sessionTtlMs: 30 * 60_000,  // forget a chat after 30 min of silence
-  llmTimeoutMs: 20_000,       // free models can hang, so never wait forever
-  llmRetries: 2,              // each retry lets free-llm-router pick another model
+  llmTimeoutMs: 8_000,        // each attempt: max 8 seconds
+  llmRetries: 1,              // each retry lets free-llm-router pick another model
+  replyBudgetMs: 12_000,      // the whole reply step: max 12 seconds in total
+  analyzeBudgetMs: 6_000,     // the understanding step: max 6 seconds in total
   maxMessageLength: 500,
 };
 
@@ -78,10 +80,15 @@ function withTimeout(promise, ms) {
 }
 
 // Calls the router with retries. Returns { text, model } or null if every attempt failed.
-async function callLLM(messages, { retries = CONFIG.llmRetries, timeoutMs = CONFIG.llmTimeoutMs } = {}) {
+// budgetMs = total time allowed for ALL attempts. When it runs out we return null so the
+// caller can use the Node.js fallback instead of making the user wait.
+async function callLLM(messages, { retries = CONFIG.llmRetries, timeoutMs = CONFIG.llmTimeoutMs, budgetMs = Infinity } = {}) {
+  const deadline = Date.now() + budgetMs;
   for (let attempt = 0; attempt <= retries; attempt++) {
+    const remaining = deadline - Date.now();
+    if (remaining <= 500) break; // out of time, so go to fallback
     try {
-      const res = await withTimeout(router.chat({ messages }), timeoutMs);
+      const res = await withTimeout(router.chat({ messages }), Math.min(timeoutMs, remaining));
       const text = res?.content?.trim();
       if (text) return { text, model: res.model };
       console.warn(`⚠️ LLM attempt ${attempt + 1}: empty response (${res?.model ?? 'unknown model'})`);
@@ -125,9 +132,11 @@ const emptyFilters = () => ({
   locations: [], keywords: [], id: null, sort: null,
 });
 
+// null / '' / 0 / false mean "no filter". (Number(null) is 0, which caused the old bug.)
 const toNum = (v) => {
+  if (v === null || v === undefined || v === '' || typeof v === 'boolean') return null;
   const n = Number(v);
-  return Number.isFinite(n) && n >= 0 ? n : null;
+  return Number.isFinite(n) && n > 0 ? n : null;
 };
 
 // Cleans anything (from rules or from an LLM) into a safe, predictable shape.
@@ -138,7 +147,9 @@ function normalizeFilters(raw = {}) {
   if (f.minPrice != null && f.maxPrice != null && f.minPrice > f.maxPrice) {
     [f.minPrice, f.maxPrice] = [f.maxPrice, f.minPrice];
   }
-  f.bedrooms = [...new Set([].concat(raw.bedrooms ?? []).map(Number))]
+  f.bedrooms = [...new Set([].concat(raw.bedrooms ?? [])
+    .filter((v) => v !== null && v !== '' && typeof v !== 'boolean')
+    .map(Number))]
     .filter((n) => Number.isInteger(n) && n >= 0 && n <= 20).slice(0, 5);
   const bath = toNum(raw.bathrooms);
   f.bathrooms = bath != null && Number.isInteger(bath) && bath <= 20 ? bath : null;
@@ -252,7 +263,7 @@ Houses already shown: ${JSON.stringify(shown)}`;
 
   const out = await callLLM(
     [{ role: 'system', content: system }, { role: 'user', content: message }],
-    { retries: 1 }
+    { retries: 1, budgetMs: CONFIG.analyzeBudgetMs }
   );
   const ai = out ? extractJSON(out.text) : null;
 
@@ -392,7 +403,7 @@ async function writeReply({ message, session, intent, houses, exactMatch, notes 
     ...session.history.slice(-CONFIG.historyTurns * 2),
     { role: 'user', content: `VERIFIED_DATA:\n${JSON.stringify(context)}\n\nCUSTOMER_MESSAGE:\n${message}` },
   ];
-  const out = await callLLM(messages);
+  const out = await callLLM(messages, { budgetMs: CONFIG.replyBudgetMs });
   if (!out) return null;
   const text = out.text.replace(/^["'`]+|["'`]+$/g, '').replace(/^(johnny|agent|assistant)\s*:\s*/i, '').trim().slice(0, 1200);
   return text.length >= 2 ? { text, model: out.model } : null;
